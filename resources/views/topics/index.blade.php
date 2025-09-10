@@ -73,14 +73,17 @@
                                 <span class="topic-type">{{ $topic['type'] ?? 'device' }}</span>
                             </div>
                             <div class="topic-actions">
-                                <button onclick="viewTopic('{{ $topic['id'] ?? '' }}')" class="btn-outline-primary">
+                                <button onclick="viewTopic('{{ $topic['id'] ?? '' }}'); event.stopPropagation();" class="btn-outline-primary">
                                     👁️ Ver
                                 </button>
-                                <button onclick="editTopic('{{ $topic['id'] ?? '' }}')" class="btn-outline-primary">
+                                <button onclick="editTopic('{{ $topic['id'] ?? '' }}'); event.stopPropagation();" class="btn-outline-primary">
                                     ✏️ Editar
                                 </button>
-                                <button onclick="deleteTopic('{{ $topic['id'] ?? '' }}')" class="btn-outline-primary text-red-600">
-                                    🚫 Desativar
+                                <button onclick="showTestCommands('{{ $topic['name'] ?? '' }}'); event.stopPropagation();" class="btn-outline-success">
+                                    🎮 Testar MQTT
+                                </button>
+                                <button onclick="deleteTopic('{{ $topic['id'] ?? '' }}'); event.stopPropagation();" class="btn-outline-danger">
+                                    🗑️ Excluir
                                 </button>
                             </div>
                         </div>
@@ -93,6 +96,21 @@
                                     {{ $topic['status'] ?? 'Ativo' }}
                                 </span>
                             </p>
+                            @if(isset($topic['name']) && str_starts_with($topic['name'], 'iot/'))
+                                <div class="api-endpoint">
+                                    <p><strong>📡 Endpoint API:</strong></p>
+                                    <div class="endpoint-box">
+                                        <code class="endpoint-url">POST http://{{ request()->getHost() }}:8000/api/mqtt/{{ $topic['name'] }}</code>
+                                        <button onclick="copyEndpoint('{{ $topic['name'] }}')" class="copy-btn" title="Copiar URL">
+                                            📋
+                                        </button>
+                                    </div>
+                                    <div class="endpoint-example">
+                                        <p><strong>Exemplo Postman:</strong></p>
+                                        <code>{"msg": "led_on"}</code> ou <code>{"msg": "led_off"}</code>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 @endforeach
@@ -143,6 +161,116 @@
                 <button onclick="closeModal()" class="btn-secondary">Cancelar</button>
                 <button onclick="saveTopic()" class="btn-primary">Salvar</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Teste MQTT -->
+<div id="mqttTestModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>🎮 Teste de Comandos MQTT</h2>
+            <button onclick="closeMqttTestModal()" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="mqtt-test-info">
+                <p><strong>📡 Tópico:</strong> <span id="testTopicName">-</span></p>
+                <p><strong>🔗 Status da Conexão:</strong> <span id="connectionStatus" class="status-checking">Verificando...</span></p>
+            </div>
+
+            <div class="mqtt-commands-grid">
+                <div class="command-group">
+                    <h3>💡 Controle de LED</h3>
+                    <div class="command-buttons">
+                        <button onclick="sendMqttCommand('led_on')" class="cmd-btn cmd-led-on">
+                            💡 Ligar LED
+                        </button>
+                        <button onclick="sendMqttCommand('led_off')" class="cmd-btn cmd-led-off">
+                            💡 Desligar LED
+                        </button>
+                        <button onclick="sendMqttCommand('led_blink')" class="cmd-btn cmd-led-blink">
+                            💫 LED Piscar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="command-group">
+                    <h3>📊 Monitoramento</h3>
+                    <div class="command-buttons">
+                        <button onclick="sendMqttCommand('status')" class="cmd-btn cmd-status">
+                            📊 Solicitar Status
+                        </button>
+                    </div>
+                </div>
+
+                <div class="command-group">
+                    <h3>⚠️ Controle Avançado</h3>
+                    <div class="command-buttons">
+                        <button onclick="sendMqttCommand('reset')" class="cmd-btn cmd-reset" data-confirm="true">
+                            🔄 Factory Reset
+                        </button>
+                    </div>
+                </div>
+
+                <div class="command-group">
+                    <h3>🔧 Comando Personalizado</h3>
+                    <div class="custom-command">
+                        <input type="text" id="customCommand" placeholder='Ex: {"command": "custom", "value": 123}' class="form-input">
+                        <button onclick="sendCustomCommand()" class="cmd-btn cmd-custom">
+                            📤 Enviar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mqtt-response">
+                <h4>📨 Resposta do Comando:</h4>
+                <div id="mqttResponse" class="response-area">
+                    <em>Nenhum comando enviado ainda...</em>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="clearResponse()" class="btn-secondary">🗑️ Limpar</button>
+            <button onclick="closeMqttTestModal()" class="btn-primary">Fechar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmação de Desativação -->
+<div id="deleteConfirmModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>🗑️ Confirmar Exclusão</h2>
+            <button onclick="closeDeleteModal()" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="delete-warning">
+                <div class="warning-icon">🗑️</div>
+                <h3>Excluir Tópico</h3>
+                <p>Você tem certeza que deseja <strong>excluir permanentemente</strong> o tópico:</p>
+                <div class="topic-name-highlight">
+                    <strong id="deleteTopicName">-</strong>
+                </div>
+                <div class="warning-details">
+                    <p>⚠️ <strong>Esta ação irá:</strong></p>
+                    <ul>
+                        <li>🗑️ <strong>Excluir o tópico permanentemente</strong></li>
+                        <li>❌ Remover da listagem completamente</li>
+                        <li>🔒 Interromper todos os comandos MQTT</li>
+                        <li>📊 Apagar todos os dados relacionados</li>
+                    </ul>
+                    <p><em>⚠️ <strong>ATENÇÃO:</strong> Esta ação não pode ser desfeita!</em></p>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeDeleteModal()" class="btn-secondary">
+                ❌ Cancelar
+            </button>
+            <button onclick="confirmDelete()" class="btn-danger">
+                🗑️ Confirmar Exclusão
+            </button>
         </div>
     </div>
 </div>
@@ -270,9 +398,13 @@
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
     z-index: 1000;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
+}
+
+.modal.show {
+    display: flex;
 }
 
 .modal-content {
@@ -424,6 +556,379 @@
     opacity: 0.5;
     transform: scale(0.95);
 }
+
+/* Estilos do Modal de Teste MQTT */
+.mqtt-test-info {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.mqtt-test-info p {
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.status-checking {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.status-connected {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.status-warning {
+    color: #ffc107;
+    font-weight: bold;
+}
+
+.status-error {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.mqtt-commands-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.command-group {
+    background: #ffffff;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.command-group h3 {
+    margin: 0 0 1rem 0;
+    color: #343a40;
+    font-size: 1.1rem;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 0.5rem;
+}
+
+.command-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.cmd-btn {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: left;
+}
+
+.cmd-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+}
+
+.cmd-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.cmd-led-on {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+}
+
+.cmd-led-off {
+    background: linear-gradient(135deg, #6c757d, #495057);
+}
+
+.cmd-led-blink {
+    background: linear-gradient(135deg, #ffc107, #e0a800);
+    color: #212529;
+}
+
+.cmd-status {
+    background: linear-gradient(135deg, #17a2b8, #117a8b);
+}
+
+.cmd-reset {
+    background: linear-gradient(135deg, #dc3545, #b02a37);
+}
+
+.cmd-custom {
+    background: linear-gradient(135deg, #6f42c1, #59359a);
+}
+
+.custom-command {
+    display: flex;
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.custom-command input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.mqtt-response {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.mqtt-response h4 {
+    margin: 0 0 1rem 0;
+    color: #495057;
+    font-size: 1rem;
+}
+
+.response-area {
+    background: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 1rem;
+    min-height: 100px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+.response-success {
+    border-left: 4px solid #28a745;
+    background: #d4edda;
+}
+
+.response-error {
+    border-left: 4px solid #dc3545;
+    background: #f8d7da;
+}
+
+.response-info {
+    border-left: 4px solid #17a2b8;
+    background: #d1ecf1;
+}
+
+.btn-outline-success {
+    background: transparent;
+    color: #28a745;
+    border: 1px solid #28a745;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-success:hover {
+    background: #28a745;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.btn-outline-danger {
+    background: transparent;
+    color: #dc3545;
+    border: 1px solid #dc3545;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-danger:hover {
+    background: #dc3545;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+/* Estilos da Modal de Confirmação de Desativação */
+.delete-warning {
+    text-align: center;
+    padding: 1rem;
+}
+
+.warning-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    color: #dc3545;
+}
+
+.delete-warning h3 {
+    color: #dc3545;
+    margin: 1rem 0;
+    font-size: 1.5rem;
+}
+
+.topic-name-highlight {
+    background: #f8f9fa;
+    border: 2px solid #dc3545;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    font-size: 1.1rem;
+    color: #dc3545;
+}
+
+.warning-details {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    text-align: left;
+}
+
+.warning-details p {
+    margin: 0.5rem 0;
+    color: #856404;
+}
+
+.warning-details ul {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+
+.warning-details li {
+    margin: 0.25rem 0;
+    color: #856404;
+}
+
+.warning-details em {
+    color: #0c5460;
+    font-style: italic;
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #dc3545, #b02a37);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #c82333, #9a1e2a);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Estilos do Endpoint API */
+.api-endpoint {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.endpoint-box {
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+}
+
+.endpoint-url {
+    flex: 1;
+    background: transparent;
+    border: none;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    color: #495057;
+    word-break: break-all;
+}
+
+.copy-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    margin-left: 0.5rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background 0.3s ease;
+}
+
+.copy-btn:hover {
+    background: #0056b3;
+}
+
+.copy-btn:active {
+    background: #28a745;
+}
+
+.endpoint-example {
+    background: #e9ecef;
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.endpoint-example code {
+    background: transparent;
+    color: #495057;
+    font-size: 0.8rem;
+}
+
+@media (max-width: 768px) {
+    .mqtt-commands-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .custom-command {
+        flex-direction: column;
+    }
+    
+    .endpoint-box {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .copy-btn {
+        margin-left: 0;
+        margin-top: 0.5rem;
+    }
+}
 </style>
 
 <script>
@@ -438,52 +943,81 @@ function createTopic() {
     currentTopicId = null;
     document.getElementById('modalTitle').textContent = 'Criar Tópico MQTT';
     document.getElementById('topicForm').reset();
-    document.getElementById('topicModal').style.display = 'flex';
+    document.getElementById('topicModal').classList.add('show');
 }
 
 function editTopic(topicId) {
     currentTopicId = topicId;
     document.getElementById('modalTitle').textContent = 'Editar Tópico MQTT';
     // Aqui você carregaria os dados do tópico
-    document.getElementById('topicModal').style.display = 'flex';
+    document.getElementById('topicModal').classList.add('show');
 }
 
 function viewTopic(topicId) {
     alert('Visualizar tópico: ' + topicId);
 }
 
+// Variáveis para modal de confirmação
+let pendingDeleteTopicId = null;
+let pendingDeleteTopicName = null;
+
 function deleteTopic(topicId) {
-    if (confirm('Tem certeza que deseja desativar este tópico?')) {
-        // Mostrar loading
-        const button = event.target;
-        const originalText = button.textContent;
-        button.textContent = '⏳ Desativando...';
-        button.disabled = true;
+    // Encontrar o nome do tópico na interface
+    const topicElement = event.target.closest('.topic-item');
+    const topicNameElement = topicElement.querySelector('.topic-name h3');
+    const topicName = topicNameElement ? topicNameElement.textContent.trim() : 'tópico selecionado';
+    
+    // Salvar informações para confirmação
+    pendingDeleteTopicId = topicId;
+    pendingDeleteTopicName = topicName;
+    
+    // Atualizar modal e mostrar
+    document.getElementById('deleteTopicName').textContent = topicName;
+    document.getElementById('deleteConfirmModal').classList.add('show');
+}
 
-        // Criar formulário para desativação real
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/topics/${topicId}/deactivate`;
+function closeDeleteModal() {
+    document.getElementById('deleteConfirmModal').classList.remove('show');
+    pendingDeleteTopicId = null;
+    pendingDeleteTopicName = null;
+}
 
-        // Adicionar CSRF token
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = '_token';
-        csrfInput.value = csrfToken;
-        form.appendChild(csrfInput);
-
-        // Adicionar método PATCH (para desativação)
-        const methodInput = document.createElement('input');
-        methodInput.type = 'hidden';
-        methodInput.name = '_method';
-        methodInput.value = 'PATCH';
-        form.appendChild(methodInput);
-
-        // Adicionar ao DOM e submeter
-        document.body.appendChild(form);
-        form.submit();
+function confirmDelete() {
+    if (!pendingDeleteTopicId) {
+        console.error('Erro: ID do tópico não encontrado');
+        closeDeleteModal();
+        return;
     }
+
+    // Mostrar loading no botão de confirmação
+    const confirmBtn = document.querySelector('#deleteConfirmModal .btn-danger');
+    const originalText = confirmBtn.textContent;
+    confirmBtn.textContent = '⏳ Excluindo...';
+    confirmBtn.disabled = true;
+
+    // Criar formulário para exclusão permanente
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/topics/${pendingDeleteTopicId}`;
+
+    // Adicionar CSRF token
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = '_token';
+    csrfInput.value = csrfToken;
+    form.appendChild(csrfInput);
+
+    // Adicionar método DELETE
+    const methodInput = document.createElement('input');
+    methodInput.type = 'hidden';
+    methodInput.name = '_method';
+    methodInput.value = 'DELETE';
+    form.appendChild(methodInput);
+
+    // Adicionar ao DOM e submeter
+    document.body.appendChild(form);
+    form.submit();
 }
 
 function showAlert(message, type = 'success') {
@@ -523,7 +1057,7 @@ function updateStats() {
 }
 
 function closeModal() {
-    document.getElementById('topicModal').style.display = 'none';
+    document.getElementById('topicModal').classList.remove('show');
 }
 
 function saveTopic() {
@@ -600,9 +1134,253 @@ function saveTopic() {
 // Fechar modal ao clicar fora
 window.onclick = function(event) {
     const modal = document.getElementById('topicModal');
-    if (event.target === modal) {
+    const mqttModal = document.getElementById('mqttTestModal');
+    const deleteModal = document.getElementById('deleteConfirmModal');
+    
+    if (event.target === modal && modal.classList.contains('show')) {
         closeModal();
     }
+    if (event.target === mqttModal && mqttModal.classList.contains('show')) {
+        closeMqttTestModal();
+    }
+    if (event.target === deleteModal && deleteModal.classList.contains('show')) {
+        closeDeleteModal();
+    }
+}
+
+// Variáveis globais para teste MQTT
+let currentTestTopic = null;
+
+// Mostrar modal de teste de comandos MQTT
+function showTestCommands(topicName) {
+    console.log('🎮 Abrindo teste MQTT para tópico:', topicName);
+    
+    currentTestTopic = topicName;
+    
+    // Atualizar informações do modal
+    document.getElementById('testTopicName').textContent = topicName;
+    document.getElementById('connectionStatus').textContent = 'Verificando...';
+    document.getElementById('connectionStatus').className = 'status-checking';
+    
+    // Limpar resposta anterior
+    clearResponse();
+    
+    // Mostrar modal
+    document.getElementById('mqttTestModal').classList.add('show');
+    
+    // Verificar conexão com o dispositivo
+    checkDeviceConnection(topicName);
+}
+
+// Fechar modal de teste MQTT
+function closeMqttTestModal() {
+    document.getElementById('mqttTestModal').classList.remove('show');
+    currentTestTopic = null;
+}
+
+// Verificar conexão com o dispositivo
+async function checkDeviceConnection(topicName) {
+    try {
+        updateResponse('🔍 Verificando conexão com o dispositivo...', 'info');
+        
+        // Tentar encontrar IP do dispositivo baseado no tópico
+        const response = await fetch('/api/topics/test-connection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            },
+            body: JSON.stringify({ topic: topicName })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.mqtt_available) {
+                document.getElementById('connectionStatus').textContent = '✅ Conectado (MQTT)';
+                document.getElementById('connectionStatus').className = 'status-connected';
+                updateResponse('✅ Dispositivo encontrado com suporte MQTT completo!', 'success');
+            } else {
+                document.getElementById('connectionStatus').textContent = '⚠️ Sem MQTT';
+                document.getElementById('connectionStatus').className = 'status-warning';
+                updateResponse(`⚠️ Dispositivo encontrado em ${data.device_ip} mas sem suporte MQTT.\n\n${data.suggestion || 'Atualize o WiFi Manager para a versão com MQTT.'}`, 'error');
+            }
+        } else if (response.status === 206) {
+            // Dispositivo encontrado mas sem MQTT
+            const data = await response.json();
+            document.getElementById('connectionStatus').textContent = '⚠️ Sem MQTT';
+            document.getElementById('connectionStatus').className = 'status-warning';
+            updateResponse(`⚠️ ${data.message}\n\nIP: ${data.device_ip}\n\n💡 ${data.suggestion}`, 'error');
+        } else {
+            document.getElementById('connectionStatus').textContent = '❌ Desconectado';
+            document.getElementById('connectionStatus').className = 'status-error';
+            updateResponse('❌ Nenhum dispositivo encontrado na rede. Verifique se o Raspberry Pi está conectado.', 'error');
+        }
+    } catch (error) {
+        document.getElementById('connectionStatus').textContent = '❌ Erro de conexão';
+        document.getElementById('connectionStatus').className = 'status-error';
+        updateResponse('❌ Erro ao verificar conexão: ' + error.message, 'error');
+    }
+}
+
+// Enviar comando MQTT
+async function sendMqttCommand(command) {
+    if (!currentTestTopic) {
+        updateResponse('❌ Nenhum tópico selecionado', 'error');
+        return;
+    }
+    
+    // Confirmação para comandos perigosos
+    if (command === 'reset') {
+        if (!confirm('⚠️ ATENÇÃO: Isso fará um Factory Reset do dispositivo, apagando todas as configurações. Continuar?')) {
+            return;
+        }
+    }
+    
+    const payload = { command: command };
+    await sendMqttMessage(payload);
+}
+
+// Enviar comando personalizado
+async function sendCustomCommand() {
+    const customInput = document.getElementById('customCommand');
+    const customCommand = customInput.value.trim();
+    
+    if (!customCommand) {
+        updateResponse('❌ Digite um comando personalizado', 'error');
+        return;
+    }
+    
+    try {
+        const payload = JSON.parse(customCommand);
+        await sendMqttMessage(payload);
+        customInput.value = ''; // Limpar campo após envio
+    } catch (error) {
+        updateResponse('❌ Comando inválido. Use formato JSON válido: {"command": "valor"}', 'error');
+    }
+}
+
+// Enviar mensagem MQTT via API
+async function sendMqttMessage(payload) {
+    if (!currentTestTopic) {
+        updateResponse('❌ Nenhum tópico selecionado', 'error');
+        return;
+    }
+    
+    try {
+        updateResponse(`📤 Enviando comando: ${JSON.stringify(payload)}`, 'info');
+        
+        // Desabilitar botões temporariamente
+        disableCommandButtons(true);
+        
+        const response = await fetch('/api/topics/send-command', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            },
+            body: JSON.stringify({
+                topic: currentTestTopic,
+                payload: payload
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            updateResponse(`✅ Comando enviado com sucesso!\n\nDetalhes:\n${JSON.stringify(data, null, 2)}`, 'success');
+        } else {
+            updateResponse(`❌ Erro ao enviar comando:\n${data.message || 'Erro desconhecido'}`, 'error');
+        }
+        
+    } catch (error) {
+        updateResponse(`❌ Erro na comunicação: ${error.message}`, 'error');
+    } finally {
+        // Reabilitar botões
+        setTimeout(() => disableCommandButtons(false), 1000);
+    }
+}
+
+// Desabilitar/habilitar botões de comando
+function disableCommandButtons(disabled) {
+    const buttons = document.querySelectorAll('.cmd-btn');
+    buttons.forEach(btn => {
+        btn.disabled = disabled;
+    });
+}
+
+// Atualizar área de resposta
+function updateResponse(message, type = 'info') {
+    const responseArea = document.getElementById('mqttResponse');
+    const timestamp = new Date().toLocaleTimeString();
+    
+    // Adicionar timestamp à mensagem
+    const fullMessage = `[${timestamp}] ${message}`;
+    
+    // Se já há conteúdo, adicionar nova linha
+    if (responseArea.textContent && !responseArea.textContent.includes('Nenhum comando')) {
+        responseArea.textContent += '\n\n' + fullMessage;
+    } else {
+        responseArea.textContent = fullMessage;
+    }
+    
+    // Aplicar classe de estilo
+    responseArea.className = `response-area response-${type}`;
+    
+    // Scroll para o final
+    responseArea.scrollTop = responseArea.scrollHeight;
+}
+
+// Limpar área de resposta
+function clearResponse() {
+    const responseArea = document.getElementById('mqttResponse');
+    responseArea.textContent = 'Nenhum comando enviado ainda...';
+    responseArea.className = 'response-area';
+}
+
+// Copiar endpoint para clipboard
+function copyEndpoint(topicName) {
+    const endpoint = `POST http://${window.location.hostname}:8000/api/mqtt/${topicName}`;
+    
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(endpoint).then(() => {
+            // Feedback visual
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = '✅';
+            button.style.background = '#28a745';
+            
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = '#007bff';
+            }, 2000);
+            
+            // Mostrar notificação
+            showAlert('📋 Endpoint copiado para área de transferência!', 'success');
+        }).catch(() => {
+            copyToClipboardFallback(endpoint);
+        });
+    } else {
+        copyToClipboardFallback(endpoint);
+    }
+}
+
+// Fallback para copiar sem clipboard API
+function copyToClipboardFallback(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        showAlert('📋 Endpoint copiado!', 'success');
+    } catch (err) {
+        showAlert('❌ Erro ao copiar. Copie manualmente.', 'error');
+    }
+    
+    document.body.removeChild(textArea);
 }
 </script>
 @endsection

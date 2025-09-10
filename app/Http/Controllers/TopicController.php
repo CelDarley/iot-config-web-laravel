@@ -206,49 +206,188 @@ class TopicController extends Controller
         }
     }
 
+
+
     public function destroy($id)
     {
-        \Log::info("Tentando desativar tópico ID: $id");
-
         try {
-            // Usar o endpoint correto de desativação da API
-            $response = Http::patch("http://localhost:8000/api/mqtt/topics/{$id}/deactivate");
+            \Log::info('🗑️ Solicitando exclusão de tópico', ['id' => $id]);
 
-            \Log::info("Resposta da API: " . $response->status() . " - " . $response->body());
+            // Usar endpoint DELETE para exclusão permanente
+            $response = Http::delete("http://localhost:8000/api/mqtt/topics/{$id}");
 
             if ($response->successful()) {
-                \Log::info("Tópico $id desativado com sucesso via API");
+                $data = $response->json();
+                $message = $data['message'] ?? 'Tópico excluído com sucesso!';
+                
+                \Log::info('✅ Tópico excluído com sucesso', [
+                    'id' => $id,
+                    'response' => $data
+                ]);
+
                 return redirect()->route('topics.index')
-                    ->with('success', 'Tópico desativado com sucesso!');
+                    ->with('success', $message);
             } else {
-                \Log::warning("API falhou para tópico $id");
+                $errorData = $response->json();
+                $errorMessage = $errorData['message'] ?? "Erro ao excluir tópico #{$id}";
+                
+                \Log::error('❌ Erro ao excluir tópico', [
+                    'id' => $id,
+                    'status' => $response->status(),
+                    'response' => $errorData
+                ]);
+
                 return redirect()->route('topics.index')
-                    ->with('error', "Erro ao desativar tópico #{$id}. Tente novamente.");
+                    ->with('error', $errorMessage);
             }
         } catch (\Exception $e) {
-            \Log::error("Erro ao desativar tópico $id: " . $e->getMessage());
+            \Log::error('❌ Exceção ao excluir tópico', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
             return redirect()->route('topics.index')
-                ->with('error', "Erro ao conectar com a API. Tente novamente.");
+                ->with('error', "Erro ao conectar com a API: " . $e->getMessage());
         }
     }
 
+    // Manter método deactivate para compatibilidade (caso necessário)
     public function deactivate($id)
     {
-        try {
-            // Usar o endpoint correto de desativação da API
-            $response = Http::patch("http://localhost:8000/api/mqtt/topics/{$id}/deactivate");
+        // Redirecionar para exclusão
+        return $this->destroy($id);
+    }
 
-            if ($response->successful()) {
-                return redirect()->route('topics.index')
-                    ->with('success', 'Tópico desativado com sucesso!');
+    /**
+     * Testar conexão com dispositivo
+     */
+    public function testConnection(Request $request)
+    {
+        try {
+            $topic = $request->input('topic');
+            
+            \Log::info('🔍 Testando conectividade MQTT', ['topic' => $topic]);
+
+            // Verificar se o broker MQTT está ativo (mais simples e efetivo)
+            $brokerResponse = Http::timeout(3)->get('http://localhost:8000/api/mqtt/topics');
+            
+            if ($brokerResponse->successful()) {
+                // Broker MQTT funcionando - verificar se tópico existe
+                $topicsData = $brokerResponse->json();
+                $topicExists = false;
+                
+                if (isset($topicsData['data'])) {
+                    foreach ($topicsData['data'] as $existingTopic) {
+                        if ($existingTopic['name'] === $topic) {
+                            $topicExists = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if ($topicExists) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Broker MQTT ativo e tópico configurado',
+                        'mqtt_available' => true,
+                        'topic_exists' => true,
+                        'broker_status' => 'online'
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Broker MQTT ativo, mas tópico não encontrado',
+                        'mqtt_available' => true,
+                        'topic_exists' => false,
+                        'suggestion' => 'O tópico pode não estar registrado no broker ainda'
+                    ]);
+                }
             } else {
-                return redirect()->route('topics.index')
-                    ->with('error', "Erro ao desativar tópico #{$id}. Tente novamente.");
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Broker MQTT não está respondendo',
+                    'mqtt_available' => false,
+                    'suggestion' => 'Verifique se o servidor MQTT está rodando'
+                ], 503);
             }
+
         } catch (\Exception $e) {
-            return redirect()->route('topics.index')
-                ->with('error', "Erro ao conectar com a API. Tente novamente.");
+            \Log::error('❌ Erro ao testar conectividade MQTT', [
+                'error' => $e->getMessage(),
+                'topic' => $request->input('topic')
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro na verificação MQTT: ' . $e->getMessage(),
+                'mqtt_available' => false
+            ], 500);
         }
     }
 
+    /**
+     * Enviar comando MQTT para dispositivo
+     */
+    public function sendCommand(Request $request)
+    {
+        try {
+            $request->validate([
+                'topic' => 'required|string',
+                'payload' => 'required|array'
+            ]);
+
+            $topic = $request->input('topic');
+            $payload = $request->input('payload');
+
+            \Log::info('📤 Enviando comando MQTT', [
+                'topic' => $topic,
+                'payload' => $payload
+            ]);
+
+            // Enviar comando via broker MQTT do backend
+            $response = Http::timeout(10)->post('http://localhost:8000/api/mqtt/publish', [
+                'topic' => $topic,
+                'payload' => $payload
+            ]);
+
+            if ($response->successful()) {
+                $result = $response->json();
+                
+                \Log::info('✅ Comando MQTT enviado', ['result' => $result]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Comando enviado com sucesso',
+                    'result' => $result,
+                    'topic' => $topic,
+                    'payload' => $payload,
+                    'timestamp' => now()->toISOString()
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Falha ao enviar comando via broker MQTT'
+                ], 502);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('❌ Erro ao enviar comando MQTT', [
+                'error' => $e->getMessage(),
+                'topic' => $request->input('topic'),
+                'payload' => $request->input('payload')
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao enviar comando: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Encontrar IP do dispositivo baseado no tópico - REMOVIDO
+     * Não é mais necessário porque MQTT não precisa conhecer IP do cliente
+     */
+    // Métodos removidos: findDeviceIpByTopic, findDeviceViaMdns, scanNetworkForDevices, 
+    // verifyEsp32Device, getServerLocalIp
 }

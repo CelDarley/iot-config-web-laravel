@@ -23,6 +23,10 @@ Route::middleware('auth')->group(function () {
     // Rotas de tópicos MQTT
     Route::resource('topics', TopicController::class);
     Route::patch('topics/{id}/deactivate', [TopicController::class, 'deactivate'])->name('topics.deactivate');
+    
+    // Rotas de teste MQTT
+    Route::post('/api/topics/test-connection', [TopicController::class, 'testConnection'])->name('topics.test-connection');
+    Route::post('/api/topics/send-command', [TopicController::class, 'sendCommand'])->name('topics.send-command');
 
     // Rotas de dispositivos (placeholder)
     Route::get('/devices', function () {
